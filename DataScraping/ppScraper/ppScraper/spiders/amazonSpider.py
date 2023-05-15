@@ -1,7 +1,7 @@
 import scrapy
 
 
-class AmazonspiderSpider(scrapy.Spider):
+class AmazonSpider(scrapy.Spider):
     name = 'amazonSpider'
     allowed_domains = ['amazon.ca']
     start_urls = ['http://amazon.ca/']
