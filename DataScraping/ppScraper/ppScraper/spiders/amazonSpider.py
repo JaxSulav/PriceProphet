@@ -1,14 +1,12 @@
 import scrapy
-from urllib.parse import urljoin
-import re
-
 class AmazonSpider(scrapy.Spider):
     name = 'amazonSpider'
     allowed_domains = ['amazon.ca']
     start_urls = ['http://amazon.ca/']
 
     def start_requests(self):
-        search_items = ['mouse']
+        # search_items = ['mouse', 'watch']
+        search_items = ['watch']
         for item in search_items:
             search_url = f'https://www.amazon.ca/s?k={item}'
             yield scrapy.Request(url=search_url, callback=self.parse)
@@ -42,6 +40,11 @@ class AmazonSpider(scrapy.Spider):
             brand = ""
 
         try:
+            manufacturer = response.css('#prodDetails th:contains("Manufacturer") + td.a-size-base.prodDetAttrValue::text').get()
+        except AttributeError:
+            manufacturer = "" 
+
+        try:
             category = response.css('#nav-subnav').attrib['data-category']
         except AttributeError:
             category = ""
@@ -61,6 +64,7 @@ class AmazonSpider(scrapy.Spider):
             'title': title,
             'price': price,
             'brand': brand,
+            'manufacturer': manufacturer,
             'category': category,
             'category_display': category_display,
             'description': description
