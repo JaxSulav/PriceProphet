@@ -7,13 +7,12 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
-from pickle import TRUE
-
-
 BOT_NAME = 'ppScraper'
 
 SPIDER_MODULES = ['ppScraper.spiders']
 NEWSPIDER_MODULE = 'ppScraper.spiders'
+USER_AGENT = 'Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -89,12 +88,3 @@ ROBOTSTXT_OBEY = True
 #HTTPCACHE_DIR = 'httpcache'
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
-
-
-SCRAPEOPS_API_KEY = ""
-SCRAPEOPS_PROXY_ENABLED = True
-
-DOWNLOADER_MIDDLEWARES = {
-    'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
-}
-
