@@ -9,7 +9,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.firefox.options import Options
 import mysql.connector
-
+from ..logger import setup_logger
+import logging
 
 class DBMgmt:
     def __init__(self, host, user, password, database):
@@ -27,11 +28,31 @@ class DBMgmt:
 
     def create_scraped_urls_table(self):
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS scraped_urls (
+            CREATE TABLE IF NOT EXISTS scraped_links (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                url VARCHAR(255) UNIQUE,
-                name VARCHAR(255),
-                url_txt TEXT
+                url VARCHAR(255) UNIQUE NULL,
+                url_full TEXT NULL,
+                name VARCHAR(500) NULL,
+                price VARCHAR(32) NULL,
+                condition TEXT NULL,
+                shipping VARCHAR(255) NULL,
+                last_price VARCHAR(32) NULL,
+                us_price VARCHAR(32) NULL,
+                returns VARCHAR(255) NULL,
+                about TEXT NULL,
+                description TEXT NULL,
+                category VARCHAR(255) NULL,
+                authenticity VARCHAR(128) NULL,
+                money_back VARCHAR(128) NULL,
+                seller_positive_feedback VARCHAR(128) NULL,
+                seller_feedback_comments TEXT NULL,
+                seller_ratings TEXT NULL,
+                trending VARCHAR(24) NULL,
+                stock VARCHAR(255) NULL,
+                watchers VARCHAR(24) NULL,
+                seller_name VARCHAR(255) NULL,
+                seller_item_sold INTEGER NULL,
+                misc TEXT NULL
             )
         """)
         print("ScrapedUrls table created....")
@@ -131,3 +152,28 @@ class EbayNavSpider(scrapy.Spider):
         yield scrapy.Request(dropdown_links[1].get_attribute("href"), self.women_shoes)
         yield scrapy.Request(dropdown_links[2].get_attribute("href"), self.men_clothing)
         yield scrapy.Request(dropdown_links[3].get_attribute("href"), self.men_shoes)
+
+
+class EbayProductSpider(scrapy.Spider):
+    name = "ebayProductSpider"
+    allowed_domains = ["ebay.ca"]
+
+    start_urls = ["https://ebay.ca"]
+    
+    def __init__(self):
+        # Scrapy has it's own logger, we are using our custom logger here, elog
+        self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+
+    def start_requests(self):
+        self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
+        #TODO: Get all the urls_to_scrape and urls_scraped from the database 
+        # and check if they have been scraped before and pass to the spider here
+        url = "https://www.ebay.ca/itm/325509566046"
+        yield scrapy.Request(url=url, callback=self.parse)
+
+    def parse(self, response):
+        try:
+            name = response.css("h1.x-item-title__mainTitle span::text").get()
+        except Exception as e:
+            self.elog.error(f"Error occurred while extracting element text: {e}")
+
