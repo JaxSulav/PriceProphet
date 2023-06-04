@@ -168,7 +168,7 @@ class EbayProductSpider(scrapy.Spider):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         #TODO: Get all the urls_to_scrape and urls_scraped from the database 
         # and check if they have been scraped before and pass to the spider here
-        url = "https://www.ebay.ca/itm/325509566046"
+        url = "https://www.ebay.ca/itm/175726074949"
         yield scrapy.Request(url=url, callback=self.parse)
 
     def parse(self, response):
@@ -180,7 +180,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}")
 
         try:
-            condition = response.css("span.ux-icon-text__text span.ux-textspans::text").get()
+            condition = response.css("div.x-item-condition-value span.ux-textspans::text").get()
         except Exception as e:
             condition = ""
             self.elog.error(f"Error occurred while extracting element: {e}")
@@ -189,8 +189,9 @@ class EbayProductSpider(scrapy.Spider):
             prices = list()
             prices.append(response.css(".x-price-primary span.ux-textspans::text").get())
             prices.append(response.css(".x-price-approx__price > span:nth-child(1)::text").get())
-            print("KK: ", prices)
             for p in prices:
+                if p is None:
+                    continue
                 if "U" in p:
                     us_price = p
                 else:
@@ -198,4 +199,16 @@ class EbayProductSpider(scrapy.Spider):
         except Exception as e:
             self.elog.error(f"Error occurred while extracting element: {e}") 
         
-        print("GG: ", name, condition, price, us_price)
+        try:
+            last_price = response.css(".x-additional-info__textual-display span.ux-textspans--STRIKETHROUGH::text").get()
+            if not last_price:
+                last_price = ""
+        except Exception as e:
+            last_price = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        
+        print("GG: ", name)
+        print("GG: ", condition)
+        print("GG: ", price, us_price)
+        print("GG: ", last_price)
