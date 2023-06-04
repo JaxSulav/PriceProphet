@@ -23,19 +23,21 @@ class BayspiderSpider(scrapy.Spider):
     file = open("ppScraper/data/all_d.csv", 'a', newline='')
     error_file = open("error_urls.csv", 'a', newline='')
     success_file = open("success_urls.csv", 'a', newline='')
-    writer = csv.writer(file)
+    # writer = csv.writer(file)
     error_writer = csv.writer(error_file)
     success_writer = csv.writer(success_file)
 
     def __init__(self):
         self.driver = webdriver.Firefox(options=self.options)
         self.driver2 = webdriver.Firefox(options=self.options)
+        self.start_point = 8
+        self.end_point = 10
         # self.driver = webdriver.Chrome('/Users/jaxxsulav/chromedriver_mac64/chromedriver')
 
     def closed(self, reason):
         self.driver.quit()
         self.driver2.quit()
-        self.file.close()
+        # self.file.close()
         self.error_file.close()
         self.success_file.close()
 
@@ -50,7 +52,7 @@ class BayspiderSpider(scrapy.Spider):
     
     def parse(self, response):
         self.driver.get(response.url)
-        element = self.driver.find_element(By.CSS_SELECTOR, 'li.nav-item:nth-child(3)')
+        element = self.driver.find_element(By.CSS_SELECTOR, 'li.nav-item:nth-child(2)')
         hover = ActionChains(self.driver).move_to_element(element)
         hover.perform()
 
@@ -61,37 +63,44 @@ class BayspiderSpider(scrapy.Spider):
         dropdown_links = dropdown_element.find_elements( By.CSS_SELECTOR, "a.dropdown-link")
         # link_href = dropdown_links[1].get_attribute('href')
         for cnt, link in enumerate(dropdown_links):
-            # if cnt == 1:
-            #     break
-            link_href = link.get_attribute('href')
-        
-            self.driver2.get(link_href)
-            load_more_element = self.driver2.find_elements(By.CLASS_NAME, "ais-InfiniteHits-loadMore")
-            if not load_more_element:
-                print(f"Did not scrape {link_href}, because of no load more button")
-                continue
-
-            while True:
-                try:
-                    load_more_button = WebDriverWait(self.driver2, 30).until(
-                        EC.visibility_of_element_located((By.CLASS_NAME, "ais-InfiniteHits-loadMore"))
-                    )
-                    time.sleep(5)
-                    load_more_button.click()
-                except:
-                    break
+            if self.start_point < cnt < self.end_point:
+                link_href = link.get_attribute('href')
             
-            h3_tags = self.driver2.find_elements(By.TAG_NAME, "h3")
-            print("Number of h3: ", len(h3_tags))
-            self.success_writer.writerow([f"{datetime.now()} :: Performing scrape on :: {response.request.url}"])
+                self.driver2.get(link_href)
+                load_more_element = self.driver2.find_elements(By.CLASS_NAME, "ais-InfiniteHits-loadMore")
+                if not load_more_element:
+                    print(f"Did not scrape {link_href}, because of no load more button")
+                    continue
+                
+                cnt = 0
+                while True:
+                    if cnt > 46:
+                        break
+                    cnt += 1
+                    try:
+                        load_more_button = WebDriverWait(self.driver2, 30).until(
+                            EC.visibility_of_element_located((By.CLASS_NAME, "ais-InfiniteHits-loadMore"))
+                        )
+                        time.sleep(2)
+                        load_more_button.click()
+                    except:
+                        break
+                
+                h3_tags = self.driver2.find_elements(By.TAG_NAME, "h3")
+                print("Number of h3: ", len(h3_tags))
+                self.success_writer.writerow([f"{datetime.now()} :: Performing scrape on :: {response.request.url}"])
 
-            for cnt, tag in enumerate(h3_tags):
-                try:
-                    product_link = tag.find_element(By.CSS_SELECTOR, "a[href*='/product/show']").get_attribute("href")
-                    print(f"Product Link {link_href} : {product_link} :: {cnt}")
-                    yield scrapy.Request(url=product_link, callback=self.parse_product)
-                except Exception as e:
-                    print(f"Exception: error in the link: {link_href}")
+                for cnt, tag in enumerate(h3_tags):
+                    try:
+                        product_link = tag.find_element(By.CSS_SELECTOR, "a[href*='/product/show']").get_attribute("href")
+                        print(f"Product Link {link_href} : {product_link} :: {cnt}")
+                        yield scrapy.Request(url=product_link, callback=self.parse_product)
+                    except Exception as e:
+                        print(f"Exception: error in the link: {link_href}")
+            else:
+                if cnt > self.end_point:
+                    break
+                continue
             
 
 
@@ -113,7 +122,7 @@ class BayspiderSpider(scrapy.Spider):
         print(
             "INFO: ", title,price,brand,description,category
         )
-        self.writer.writerow([title, price, brand, description, category])
+        # self.writer.writerow([title, price, brand, description, category])
 
         yield {
             "title": title,
