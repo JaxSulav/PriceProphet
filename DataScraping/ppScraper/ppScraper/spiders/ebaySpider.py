@@ -172,8 +172,30 @@ class EbayProductSpider(scrapy.Spider):
         yield scrapy.Request(url=url, callback=self.parse)
 
     def parse(self, response):
+        us_price = price = ""
         try:
             name = response.css("h1.x-item-title__mainTitle span::text").get()
         except Exception as e:
-            self.elog.error(f"Error occurred while extracting element text: {e}")
+            name = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
 
+        try:
+            condition = response.css("span.ux-icon-text__text span.ux-textspans::text").get()
+        except Exception as e:
+            condition = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+        
+        try:
+            prices = list()
+            prices.append(response.css(".x-price-primary span.ux-textspans::text").get())
+            prices.append(response.css(".x-price-approx__price > span:nth-child(1)::text").get())
+            print("KK: ", prices)
+            for p in prices:
+                if "U" in p:
+                    us_price = p
+                else:
+                    price = p
+        except Exception as e:
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        print("GG: ", name, condition, price, us_price)
