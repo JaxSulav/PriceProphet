@@ -129,18 +129,10 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 #     # ...
 # }
 
-
-# SCRAPEOPS_API_KEY = 'f71adecd-9e75-4693-9f2a-fa5bd5c7989a'
-# SCRAPEOPS_PROXY_ENABLED = True
-
-# DOWNLOADER_MIDDLEWARES = {
-#     'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
-# }
-
-# SCRAPERAPI_KEY = '68589a8ba79a7830d59950606c2cfdf6'
-# RETRY_HTTP_CODES = [429]
+# SCRAPERAPI_KEY = 'e3d677eaa93fb16842aad38f2b052cf2'
+RETRY_HTTP_CODES = [429]
 # CONCURRENT_REQUESTS = 5
-# DOWNLOAD_DELAY = 0.5
+DOWNLOAD_DELAY = 0.5
 
 
 # DOWNLOADER_MIDDLEWARES = {
