@@ -1,5 +1,6 @@
 import scrapy
-import csv
+import json
+import re
 from collections import OrderedDict
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
@@ -11,6 +12,7 @@ from selenium.webdriver.firefox.options import Options
 import mysql.connector
 from ..logger import setup_logger
 import logging
+from urllib.parse import urlparse
 
 class DBMgmt:
     def __init__(self, host, user, password, database):
@@ -36,23 +38,21 @@ class DBMgmt:
                 price VARCHAR(32) NULL,
                 condition TEXT NULL,
                 shipping VARCHAR(255) NULL,
+                located_in VARCHAR(255) NULL,
                 last_price VARCHAR(32) NULL,
                 us_price VARCHAR(32) NULL,
                 returns VARCHAR(255) NULL,
-                about TEXT NULL,
-                description TEXT NULL,
+                description_url TEXT NULL,
                 category VARCHAR(255) NULL,
                 authenticity VARCHAR(128) NULL,
                 money_back VARCHAR(128) NULL,
                 seller_positive_feedback VARCHAR(128) NULL,
                 seller_feedback_comments TEXT NULL,
-                seller_ratings TEXT NULL,
+                seller_item_sold VARCHAR(32) NULL,
+                seller_all_feedback_url TEXT NULL,
                 trending VARCHAR(24) NULL,
                 stock VARCHAR(255) NULL,
                 watchers VARCHAR(24) NULL,
-                seller_name VARCHAR(255) NULL,
-                seller_item_sold INTEGER NULL,
-                misc TEXT NULL
             )
         """)
         print("ScrapedUrls table created....")
@@ -168,11 +168,18 @@ class EbayProductSpider(scrapy.Spider):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         #TODO: Get all the urls_to_scrape and urls_scraped from the database 
         # and check if they have been scraped before and pass to the spider here
-        url = "https://www.ebay.ca/itm/325509566046"
+        url = "https://www.ebay.ca/itm/185389821883"
         yield scrapy.Request(url=url, callback=self.parse)
+    
+    def get_parsed_url(self, url):
+        parsed_url = urlparse(url)
+        return (parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path)
 
     def parse(self, response):
         us_price = price = ""
+        url = self.get_parsed_url(response.request.url)
+        url_full = response.request.url
+
         try:
             name = response.css("h1.x-item-title__mainTitle span::text").get()
         except Exception as e:
@@ -180,7 +187,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}")
 
         try:
-            condition = response.css("span.ux-icon-text__text span.ux-textspans::text").get()
+            condition = response.css("div.x-item-condition-value span.ux-textspans::text").get()
         except Exception as e:
             condition = ""
             self.elog.error(f"Error occurred while extracting element: {e}")
@@ -189,8 +196,9 @@ class EbayProductSpider(scrapy.Spider):
             prices = list()
             prices.append(response.css(".x-price-primary span.ux-textspans::text").get())
             prices.append(response.css(".x-price-approx__price > span:nth-child(1)::text").get())
-            print("KK: ", prices)
             for p in prices:
+                if p is None:
+                    continue
                 if "U" in p:
                     us_price = p
                 else:
@@ -198,4 +206,168 @@ class EbayProductSpider(scrapy.Spider):
         except Exception as e:
             self.elog.error(f"Error occurred while extracting element: {e}") 
         
-        print("GG: ", name, condition, price, us_price)
+        try:
+            last_price = response.css(".x-additional-info__textual-display span.ux-textspans--STRIKETHROUGH::text").get()
+            if not last_price:
+                last_price = ""
+        except Exception as e:
+            last_price = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            shipping_price_bold = response.css(".ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
+            shipping_price_secondary = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
+            if "C" in shipping_price_secondary:
+                shipping = shipping_price_secondary
+            else:
+                shipping = shipping_price_bold
+
+            pattern = r"[(approx)]"
+            shipping = re.sub(pattern, "", shipping)
+        except Exception as e:
+            shipping = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+
+        try:
+            pre_text = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").getall()
+            located_in = [x for x in pre_text if "Located in" in x]
+            if located_in:
+                located_in = located_in[0].replace("Located in:", "").strip()
+            else:
+                located_in = ""
+        except Exception as e:
+            located_in = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+
+        try:
+            text = response.css(".ux-layout-section--returns span.ux-textspans::text").getall()
+            returns = ' '.join(text).replace("See details", "").replace("Returns:", "").strip()
+        except Exception as e:
+            returns = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            description_url = response.css("iframe#desc_ifr::attr(src)").get()
+        except Exception as e:
+            description_url = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            texts = response.css('nav.breadcrumbs ul li a.seo-breadcrumb-text span::text').getall()
+            cleaned_texts = [text.strip() for text in texts]
+            category = '/'.join(cleaned_texts)
+        except Exception as e:
+            category = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            authenticity = ""
+            texts = response.css(".ux-section-icon-with-details__data-title span.ux-textspans::text").getall()
+            for text in texts:
+                if "Authenticity Guarantee" in text:
+                    authenticity = "Yes"
+                    break
+        except Exception as e:
+            authenticity = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            money_back = "No"
+            texts = response.css(".ux-section-icon-with-details__data-title span.ux-textspans::text").getall()
+            for text in texts:
+                if "Money Back Guarantee" in text:
+                    money_back = "Yes"
+                    break
+        except Exception as e:
+            money_back = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            texts = response.css(".ux-seller-section__content span.ux-textspans::text").getall()
+            seller_positive_rating = [x for x in texts if "feedback" in x]
+            if seller_positive_rating:
+                seller_positive_rating = seller_positive_rating[0].strip()
+            else:
+                seller_positive_rating = ""
+        except Exception as e:
+            seller_positive_rating = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+        
+        try:
+            seller_all_feedback_url = response.css(".fdbk-detail-list__btn-container__btn::attr(href)").get()
+        except Exception as e:
+            seller_all_feedback_url = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            seller_feedback_comments = json.dumps(response.css(".d-stores-info-categories__details-container__tabbed-list div.fdbk-container__details__comment span::text").getall())
+            # json.loads(list_name)
+        except Exception as e:
+            seller_feedback_comments = json.dumps([])
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            trending = "No"
+            texts = response.css(".x-wtb-signals span.ux-textspans::text").getall()
+            cleaned_texts = [text.strip() for text in texts]
+            final = ''.join(cleaned_texts)
+            print("LSKSK: ", final)
+            quantity_sold = re.findall(r'\b\d+\b', final)
+            if "trending" in final:
+                trending = "Yes/"
+                if quantity_sold:
+                    trending = trending + str(quantity_sold[0])
+        except Exception as e:
+            trending = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            texts = response.css(".d-quantity__availability span.ux-textspans::text").getall()
+            if texts:
+                stock = "".join([text.strip() for text in texts])
+            else:
+                stock = ""
+        except Exception as e:
+            stock = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            watchers = ""
+            texts = response.css("#why2buy span.w2b-sgl::text").getall()
+            if texts:
+                for text in texts:
+                    if "watcher" in text:
+                        watchers = re.findall(r'\b\d+\b', text)
+                        if watchers:
+                            watchers = watchers[0]
+                        break
+        except Exception as e:
+            watchers = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            seller_item_sold = response.css(".d-stores-info-categories__container__info__section__item:nth-child(3) span:nth-child(1)::text").get().strip()
+        except Exception as e:
+            seller_item_sold = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        print("GG: ", name)
+        print("GG: ", price, us_price)
+        print("GG: ", condition)
+        print("GG: ", last_price)
+        print("GG: ", url)
+        print("GG: ", url_full)
+        print("GG: ", shipping)
+        print("GG: ", located_in)
+        print("GG: ", returns)
+        print("GG: ", description_url)
+        print("GG: ", category)
+        print("GG: ", authenticity)
+        print("GG: ", money_back)
+        print("GG: ", seller_positive_rating)
+        print("GG: ", seller_all_feedback_url)
+        print("GG: ", seller_feedback_comments)
+        print("GG: ", trending)
+        print("GG: ", stock)
+        print("GG: ", watchers)
+        print("GG: ", seller_item_sold)
