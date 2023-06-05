@@ -32,16 +32,16 @@ class DBMgmt:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS scraped_links (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                url VARCHAR(255) UNIQUE NULL,
+                url VARCHAR(255) UNIQUE,
                 url_full TEXT NULL,
                 name VARCHAR(500) NULL,
                 price VARCHAR(32) NULL,
-                condition TEXT NULL,
+                item_condition VARCHAR(255) NULL,
                 shipping VARCHAR(255) NULL,
                 located_in VARCHAR(255) NULL,
                 last_price VARCHAR(32) NULL,
                 us_price VARCHAR(32) NULL,
-                returns VARCHAR(255) NULL,
+                return_policy VARCHAR(255) NULL,
                 description_url TEXT NULL,
                 category VARCHAR(255) NULL,
                 authenticity VARCHAR(128) NULL,
@@ -52,7 +52,7 @@ class DBMgmt:
                 seller_all_feedback_url TEXT NULL,
                 trending VARCHAR(24) NULL,
                 stock VARCHAR(255) NULL,
-                watchers VARCHAR(24) NULL,
+                watchers VARCHAR(24) NULL
             )
         """)
         print("ScrapedUrls table created....")
@@ -67,10 +67,27 @@ class DBMgmt:
         self.cursor.execute("INSERT IGNORE INTO page_links (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
         self.conn.commit()
         print(f"Inserted into page_link: {url}, {name}")
+    
+    def insert_scraped_data(self, data):
+        try:
+            self.cursor.execute("""
+                INSERT IGNORE INTO scraped_links (
+                    url, url_full, name, price, item_condition, shipping, located_in, last_price, us_price, 
+                    return_policy, description_url, category, authenticity, money_back, seller_positive_feedback, 
+                    seller_feedback_comments, seller_item_sold, seller_all_feedback_url, trending, stock, watchers
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (data['url'], data['url_full'], data['name'], data['price'], data['item_condition'], data['shipping'],
+                data['located_in'], data['last_price'], data['us_price'], data['return_policy'], data['description_url'],
+                data['category'], data['authenticity'], data['money_back'], data['seller_positive_feedback'],
+                data['seller_feedback_comments'], data['seller_item_sold'], data['seller_all_feedback_url'],
+                data['trending'], data['stock'], data['watchers']))
+            self.conn.commit()
+            print("Data inserted into scraped_links table successfully....")
 
-    def insert_scraped_url(self, url, name):
-        self.cursor.execute("INSERT IGNORE INTO scraped_urls (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
-        self.conn.commit()
+        except Exception as e:
+            print(f"Error occurred: {e}")
+            self.conn.rollback()
     
     def close_connection(self):
         self.conn.close()
@@ -91,8 +108,8 @@ class EbayNavSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        # self.db.create_page_links_table()
-        # self.db.create_scraped_urls_table()
+        self.db.create_page_links_table()
+        self.db.create_scraped_urls_table()
         bay_url = "https://www.ebay.ca/"
         yield scrapy.Request(url=bay_url, callback=self.parse)
     
@@ -166,6 +183,7 @@ class EbayProductSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
+        self.db.create_scraped_urls_table()
         #TODO: Get all the urls_to_scrape and urls_scraped from the database 
         # and check if they have been scraped before and pass to the spider here
         url = "https://www.ebay.ca/itm/185389821883"
@@ -351,23 +369,30 @@ class EbayProductSpider(scrapy.Spider):
             seller_item_sold = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
-        print("GG: ", name)
-        print("GG: ", price, us_price)
-        print("GG: ", condition)
-        print("GG: ", last_price)
-        print("GG: ", url)
-        print("GG: ", url_full)
-        print("GG: ", shipping)
-        print("GG: ", located_in)
-        print("GG: ", returns)
-        print("GG: ", description_url)
-        print("GG: ", category)
-        print("GG: ", authenticity)
-        print("GG: ", money_back)
-        print("GG: ", seller_positive_rating)
-        print("GG: ", seller_all_feedback_url)
-        print("GG: ", seller_feedback_comments)
-        print("GG: ", trending)
-        print("GG: ", stock)
-        print("GG: ", watchers)
-        print("GG: ", seller_item_sold)
+        
+        data = {
+            'url': url,
+            'url_full': url_full,
+            'name': name,
+            'price': price,
+            'item_condition': condition,
+            'shipping': shipping,
+            'located_in': located_in,
+            'last_price': last_price,
+            'us_price': us_price,
+            'return_policy': returns,
+            'description_url': description_url,
+            'category': category,
+            'authenticity': authenticity,
+            'money_back': money_back,
+            'seller_positive_feedback': seller_positive_rating,
+            'seller_feedback_comments': seller_feedback_comments,
+            'seller_item_sold': seller_item_sold,
+            'seller_all_feedback_url': seller_all_feedback_url,
+            'trending': trending,
+            'stock': stock,
+            'watchers': watchers,
+        }
+        self.db.insert_scraped_data(data)
+
+        print("GG: ", data)
