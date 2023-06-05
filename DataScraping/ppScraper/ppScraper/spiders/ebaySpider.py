@@ -13,6 +13,7 @@ import mysql.connector
 from ..logger import setup_logger
 import logging
 from urllib.parse import urlparse
+from .helper import get_parsed_url
 
 class DBMgmt:
     def __init__(self, host, user, password, database):
@@ -25,23 +26,23 @@ class DBMgmt:
         self.cursor = self.conn.cursor()
 
     def create_page_links_table(self):
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS page_links (id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255), url_txt TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS page_links (id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255) NULL, url_txt TEXT NULL)")
         print("PageLinks table created....")
 
     def create_scraped_urls_table(self):
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS scraped_links (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                url VARCHAR(255) UNIQUE NULL,
+                url VARCHAR(255) UNIQUE,
                 url_full TEXT NULL,
                 name VARCHAR(500) NULL,
                 price VARCHAR(32) NULL,
-                condition TEXT NULL,
+                item_condition VARCHAR(255) NULL,
                 shipping VARCHAR(255) NULL,
                 located_in VARCHAR(255) NULL,
                 last_price VARCHAR(32) NULL,
                 us_price VARCHAR(32) NULL,
-                returns VARCHAR(255) NULL,
+                return_policy VARCHAR(255) NULL,
                 description_url TEXT NULL,
                 category VARCHAR(255) NULL,
                 authenticity VARCHAR(128) NULL,
@@ -52,10 +53,13 @@ class DBMgmt:
                 seller_all_feedback_url TEXT NULL,
                 trending VARCHAR(24) NULL,
                 stock VARCHAR(255) NULL,
-                watchers VARCHAR(24) NULL,
+                watchers VARCHAR(24) NULL
             )
         """)
-        print("ScrapedUrls table created....")
+    
+    def create_urls_scrape_table(self):
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS scrape_links(id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255) NULL, url_txt TEXT NULL)")
+
     
     def is_url_scraped(self, url):
         self.cursor.execute("SELECT url FROM scraped_urls WHERE url = %s", (url,))
@@ -66,12 +70,43 @@ class DBMgmt:
     def insert_page_link(self, url, name):
         self.cursor.execute("INSERT IGNORE INTO page_links (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
         self.conn.commit()
-        print(f"Inserted into page_link: {url}, {name}")
-
-    def insert_scraped_url(self, url, name):
-        self.cursor.execute("INSERT IGNORE INTO scraped_urls (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
+    
+    def insert_product_link(self, url, url_full):
+        self.cursor.execute("INSERT IGNORE INTO scrape_links (url, url_txt) VALUES (%s, %s)", (url, url_full,))
         self.conn.commit()
     
+    def insert_scraped_data(self, data):
+        try:
+            self.cursor.execute("""
+                INSERT IGNORE INTO scraped_links (
+                    url, url_full, name, price, item_condition, shipping, located_in, last_price, us_price, 
+                    return_policy, description_url, category, authenticity, money_back, seller_positive_feedback, 
+                    seller_feedback_comments, seller_item_sold, seller_all_feedback_url, trending, stock, watchers
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (data['url'], data['url_full'], data['name'], data['price'], data['item_condition'], data['shipping'],
+                data['located_in'], data['last_price'], data['us_price'], data['return_policy'], data['description_url'],
+                data['category'], data['authenticity'], data['money_back'], data['seller_positive_feedback'],
+                data['seller_feedback_comments'], data['seller_item_sold'], data['seller_all_feedback_url'],
+                data['trending'], data['stock'], data['watchers']))
+            self.conn.commit()
+
+        except Exception as e:
+            print(f"Error occurred: {e}")
+            self.conn.rollback()
+    
+    def get_urls_to_scrape(self):
+        self.cursor.execute("""SELECT url FROM scrape_links""")
+        return self.cursor.fetchall()
+    
+    def get_scraped_links(self):
+        self.cursor.execute("""SELECT url FROM scraped_links""")
+        return self.cursor.fetchall()
+
+    def get_page_links(self):
+        self.cursor.execute("""SELECT url FROM page_links""")
+        return self.cursor.fetchall()
+
     def close_connection(self):
         self.conn.close()
 
@@ -91,8 +126,8 @@ class EbayNavSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        # self.db.create_page_links_table()
-        # self.db.create_scraped_urls_table()
+        self.db.create_page_links_table()
+        self.db.create_scraped_urls_table()
         bay_url = "https://www.ebay.ca/"
         yield scrapy.Request(url=bay_url, callback=self.parse)
     
@@ -166,18 +201,15 @@ class EbayProductSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
+        self.db.create_scraped_urls_table()
         #TODO: Get all the urls_to_scrape and urls_scraped from the database 
         # and check if they have been scraped before and pass to the spider here
         url = "https://www.ebay.ca/itm/185389821883"
         yield scrapy.Request(url=url, callback=self.parse)
-    
-    def get_parsed_url(self, url):
-        parsed_url = urlparse(url)
-        return (parsed_url.scheme + "://" + parsed_url.netloc + parsed_url.path)
 
     def parse(self, response):
         us_price = price = ""
-        url = self.get_parsed_url(response.request.url)
+        url = get_parsed_url(response.request.url)
         url_full = response.request.url
 
         try:
@@ -351,23 +383,67 @@ class EbayProductSpider(scrapy.Spider):
             seller_item_sold = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
-        print("GG: ", name)
-        print("GG: ", price, us_price)
-        print("GG: ", condition)
-        print("GG: ", last_price)
-        print("GG: ", url)
-        print("GG: ", url_full)
-        print("GG: ", shipping)
-        print("GG: ", located_in)
-        print("GG: ", returns)
-        print("GG: ", description_url)
-        print("GG: ", category)
-        print("GG: ", authenticity)
-        print("GG: ", money_back)
-        print("GG: ", seller_positive_rating)
-        print("GG: ", seller_all_feedback_url)
-        print("GG: ", seller_feedback_comments)
-        print("GG: ", trending)
-        print("GG: ", stock)
-        print("GG: ", watchers)
-        print("GG: ", seller_item_sold)
+        
+        data = {
+            'url': url,
+            'url_full': url_full,
+            'name': name,
+            'price': price,
+            'item_condition': condition,
+            'shipping': shipping,
+            'located_in': located_in,
+            'last_price': last_price,
+            'us_price': us_price,
+            'return_policy': returns,
+            'description_url': description_url,
+            'category': category,
+            'authenticity': authenticity,
+            'money_back': money_back,
+            'seller_positive_feedback': seller_positive_rating,
+            'seller_feedback_comments': seller_feedback_comments,
+            'seller_item_sold': seller_item_sold,
+            'seller_all_feedback_url': seller_all_feedback_url,
+            'trending': trending,
+            'stock': stock,
+            'watchers': watchers,
+        }
+        self.db.insert_scraped_data(data)
+
+        print("GG: ", data)
+
+
+class EbayPageSpider(scrapy.Spider):
+    name = "ebayPageSpider"
+    allowed_domains = ["ebay.ca"]
+
+    start_urls = ["https://ebay.ca"]
+    
+    def __init__(self):
+        # Scrapy has it's own logger, we are using our custom logger here, elog
+        self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+
+    def start_requests(self):
+        self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
+        self.db.create_urls_scrape_table()
+        all_pages_from_nav = self.db.get_page_links()
+        for page in enumerate(all_pages_from_nav):
+            print("KKKijiji: ", page[1][0])
+            url = str(page[1][0])
+            yield scrapy.Request(url=url, callback=self.parse)
+    
+    def parse(self, response):
+        raw_products = response.css(".b-list__items_nofooter a.s-item__link::attr(href)").getall()
+        products_url = [x for x in raw_products]
+        for url in products_url:
+            self.db.insert_product_link(get_parsed_url(url), url)
+
+        # We are setting a limit here upto 50 pages per url in scrape urls
+        for i in range(50):
+            next_page = response.css('a.pagination__next::attr(href)').get()
+            if next_page:
+                yield response.follow(next_page, self.parse)
+            else:
+                break
+
+
+     
