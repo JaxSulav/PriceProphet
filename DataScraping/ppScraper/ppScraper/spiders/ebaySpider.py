@@ -198,14 +198,19 @@ class EbayProductSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.countlog = setup_logger(self.name, 'CountProducts.log', level=logging.DEBUG)
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         self.db.create_scraped_urls_table()
-        #TODO: Get all the urls_to_scrape and urls_scraped from the database 
-        # and check if they have been scraped before and pass to the spider here
-        url = "https://www.ebay.ca/itm/185389821883"
-        yield scrapy.Request(url=url, callback=self.parse)
+        prods = self.db.get_urls_to_scrape()
+        for cnt, page in enumerate(prods):
+            if cnt > 1:
+                break
+            self.countlog.info(f"Cnt: {cnt}")
+            #TODO: Check if urls have been scraped before and pass to the spider here
+            # url = "https://www.ebay.ca/itm/275821103916"
+            yield scrapy.Request(url=str(page[0]), callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -261,7 +266,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}")
 
         try:
-            pre_text = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").getall()
+            pre_text = response.css(".d-shipping-minview span.ux-textspans--SECONDARY::text").getall()
             located_in = [x for x in pre_text if "Located in" in x]
             if located_in:
                 located_in = located_in[0].replace("Located in:", "").strip()
@@ -343,7 +348,6 @@ class EbayProductSpider(scrapy.Spider):
             texts = response.css(".x-wtb-signals span.ux-textspans::text").getall()
             cleaned_texts = [text.strip() for text in texts]
             final = ''.join(cleaned_texts)
-            print("LSKSK: ", final)
             quantity_sold = re.findall(r'\b\d+\b', final)
             if "trending" in final:
                 trending = "Yes/"
@@ -408,8 +412,7 @@ class EbayProductSpider(scrapy.Spider):
             'watchers': watchers,
         }
         self.db.insert_scraped_data(data)
-
-        print("GG: ", data)
+        # yield data
 
 
 class EbayPageSpider(scrapy.Spider):
