@@ -101,3 +101,9 @@ class PpscraperDownloaderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
+
+
+class ScraperAPIMiddleware(object):
+    def process_request(self, request, spider):
+        request.meta['proxy'] = 'http://scraperapi:c9bac3dcf407d2921f2ac1548f5f03f6@proxy-server.scraperapi.com:8001'
+        

@@ -74,6 +74,7 @@ class DBMgmt:
     def insert_product_link(self, url, url_full):
         self.cursor.execute("INSERT IGNORE INTO scrape_links (url, url_txt) VALUES (%s, %s)", (url, url_full,))
         self.conn.commit()
+        print(f"inserted into db {url}")
     
     def insert_scraped_data(self, data):
         try:
@@ -113,6 +114,10 @@ class DBMgmt:
 
 
 class EbayNavSpider(scrapy.Spider):
+    """
+        Goes through nav links in navbar.
+        Done manually for each link in navbar
+    """
     name = "ebayNavSpider"
     allowed_domains = ["ebay.ca"]
     options = Options()
@@ -192,6 +197,9 @@ class EbayNavSpider(scrapy.Spider):
 
 
 class EbayProductSpider(scrapy.Spider):
+    """
+        Goes through every product link and extract attributes from each page
+    """
     name = "ebayProductSpider"
     allowed_domains = ["ebay.ca"]
 
@@ -429,6 +437,11 @@ class EbayProductSpider(scrapy.Spider):
 
 
 class EbayPageSpider(scrapy.Spider):
+    """
+        Goes through each and every links taken from navbar links.
+        Goes through x number of pages from the pagination section
+        Modify 'pages' to go through x number of pages
+    """
     name = "ebayPageSpider"
     allowed_domains = ["ebay.ca"]
 
@@ -437,6 +450,7 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.pages = 120
 
     def closed(self, reason):
         self.db.close_connection()
@@ -446,7 +460,6 @@ class EbayPageSpider(scrapy.Spider):
         self.db.create_urls_scrape_table()
         all_pages_from_nav = self.db.get_page_links()
         for page in enumerate(all_pages_from_nav):
-            print("KKKijiji: ", page[1][0])
             url = str(page[1][0])
             yield scrapy.Request(url=url, callback=self.parse)
     
@@ -456,8 +469,8 @@ class EbayPageSpider(scrapy.Spider):
         for url in products_url:
             self.db.insert_product_link(get_parsed_url(url), url)
 
-        # We are setting a limit here upto 50 pages per url in scrape urls
-        for i in range(50):
+        # We are setting a limit here upto x pages per url in scrape urls
+        for i in range(self.pages):
             next_page = response.css('a.pagination__next::attr(href)').get()
             if next_page:
                 yield response.follow(next_page, self.parse)

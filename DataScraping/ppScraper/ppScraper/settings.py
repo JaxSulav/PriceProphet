@@ -129,15 +129,20 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 #     # ...
 # }
 
-SCRAPERAPI_KEY = ''
+# SCRAPERAPI_KEY = 'c9bac3dcf407d2921f2ac1548f5f03f6'
 RETRY_HTTP_CODES = [429, 499]
 CONCURRENT_REQUESTS = 5
 DOWNLOAD_DELAY = 0.5
 
 
+# DOWNLOADER_MIDDLEWARES = {
+#     'scrapy_scraperapi_middleware.ScrapyScraperAPIMiddleware': 350,
+#     'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 400,
+#     'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
+# }
+
 DOWNLOADER_MIDDLEWARES = {
-    'scrapy_scraperapi_middleware.ScrapyScraperAPIMiddleware': 350,
+    'ppScraper.middlewares.ScraperAPIMiddleware': 350,
     'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 400,
     'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
 }
-
