@@ -109,6 +109,7 @@ class DBMgmt:
 
     def close_connection(self):
         self.conn.close()
+        self.cursor.close()
 
 
 class EbayNavSpider(scrapy.Spider):
@@ -123,6 +124,7 @@ class EbayNavSpider(scrapy.Spider):
         
     def closed(self, reason):
         self.driver.quit()
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
@@ -199,18 +201,27 @@ class EbayProductSpider(scrapy.Spider):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
         self.countlog = setup_logger(self.name, 'CountProducts.log', level=logging.DEBUG)
+    
+    def closed(self, reason):
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         self.db.create_scraped_urls_table()
         prods = self.db.get_urls_to_scrape()
+        scraped_raw = self.db.get_scraped_links()
+        scraped = set(x[0] for x in scraped_raw)
+
         for cnt, page in enumerate(prods):
-            if cnt > 1:
-                break
+            # if cnt > 4500:
+            #     break
+            url = str(page[0])
+            self.countlog.info(f"Url: {url}")
             self.countlog.info(f"Cnt: {cnt}")
-            #TODO: Check if urls have been scraped before and pass to the spider here
-            # url = "https://www.ebay.ca/itm/275821103916"
-            yield scrapy.Request(url=str(page[0]), callback=self.parse)
+            if url in scraped:
+                self.elog.info(f"Url already scraped: {url}")
+                continue
+            yield scrapy.Request(url=url, callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -254,10 +265,12 @@ class EbayProductSpider(scrapy.Spider):
         try:
             shipping_price_bold = response.css(".ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
             shipping_price_secondary = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
-            if "C" in shipping_price_secondary:
+            if shipping_price_secondary and "C" in shipping_price_secondary:
                 shipping = shipping_price_secondary
-            else:
+            elif shipping_price_bold:
                 shipping = shipping_price_bold
+            else:
+                shipping = ""
 
             pattern = r"[(approx)]"
             shipping = re.sub(pattern, "", shipping)
@@ -424,6 +437,9 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+
+    def closed(self, reason):
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
