@@ -129,11 +129,10 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 #     # ...
 # }
 
-# SCRAPERAPI_KEY = 'c9bac3dcf407d2921f2ac1548f5f03f6'
+# SCRAPERAPI_KEY = ''
 RETRY_HTTP_CODES = [429, 499]
 CONCURRENT_REQUESTS = 5
 DOWNLOAD_DELAY = 0.5
-
 
 # DOWNLOADER_MIDDLEWARES = {
 #     'scrapy_scraperapi_middleware.ScrapyScraperAPIMiddleware': 350,
