@@ -162,3 +162,5 @@ cython_debug/
 env/*
 data/
 *.DS_Store
+
+scraperapis.txt

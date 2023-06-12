@@ -74,6 +74,7 @@ class DBMgmt:
     def insert_product_link(self, url, url_full):
         self.cursor.execute("INSERT IGNORE INTO scrape_links (url, url_txt) VALUES (%s, %s)", (url, url_full,))
         self.conn.commit()
+        print(f"inserted into db {url}")
     
     def insert_scraped_data(self, data):
         try:
@@ -109,9 +110,14 @@ class DBMgmt:
 
     def close_connection(self):
         self.conn.close()
+        self.cursor.close()
 
 
 class EbayNavSpider(scrapy.Spider):
+    """
+        Goes through nav links in navbar.
+        Done manually for each link in navbar
+    """
     name = "ebayNavSpider"
     allowed_domains = ["ebay.ca"]
     options = Options()
@@ -123,6 +129,7 @@ class EbayNavSpider(scrapy.Spider):
         
     def closed(self, reason):
         self.driver.quit()
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
@@ -190,6 +197,9 @@ class EbayNavSpider(scrapy.Spider):
 
 
 class EbayProductSpider(scrapy.Spider):
+    """
+        Goes through every product link and extract attributes from each page
+    """
     name = "ebayProductSpider"
     allowed_domains = ["ebay.ca"]
 
@@ -198,14 +208,28 @@ class EbayProductSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.countlog = setup_logger(self.name, 'CountProducts.log', level=logging.DEBUG)
+    
+    def closed(self, reason):
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         self.db.create_scraped_urls_table()
-        #TODO: Get all the urls_to_scrape and urls_scraped from the database 
-        # and check if they have been scraped before and pass to the spider here
-        url = "https://www.ebay.ca/itm/185389821883"
-        yield scrapy.Request(url=url, callback=self.parse)
+        prods = self.db.get_urls_to_scrape()
+        scraped_raw = self.db.get_scraped_links()
+        scraped = set(x[0] for x in scraped_raw)
+
+        for cnt, page in enumerate(prods):
+            # if cnt > 4500:
+            #     break
+            url = str(page[0])
+            self.countlog.info(f"Url: {url}")
+            self.countlog.info(f"Cnt: {cnt}")
+            if url in scraped:
+                self.elog.info(f"Url already scraped: {url}")
+                continue
+            yield scrapy.Request(url=url, callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -249,10 +273,12 @@ class EbayProductSpider(scrapy.Spider):
         try:
             shipping_price_bold = response.css(".ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
             shipping_price_secondary = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
-            if "C" in shipping_price_secondary:
+            if shipping_price_secondary and "C" in shipping_price_secondary:
                 shipping = shipping_price_secondary
-            else:
+            elif shipping_price_bold:
                 shipping = shipping_price_bold
+            else:
+                shipping = ""
 
             pattern = r"[(approx)]"
             shipping = re.sub(pattern, "", shipping)
@@ -261,7 +287,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}")
 
         try:
-            pre_text = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").getall()
+            pre_text = response.css(".d-shipping-minview span.ux-textspans--SECONDARY::text").getall()
             located_in = [x for x in pre_text if "Located in" in x]
             if located_in:
                 located_in = located_in[0].replace("Located in:", "").strip()
@@ -343,7 +369,6 @@ class EbayProductSpider(scrapy.Spider):
             texts = response.css(".x-wtb-signals span.ux-textspans::text").getall()
             cleaned_texts = [text.strip() for text in texts]
             final = ''.join(cleaned_texts)
-            print("LSKSK: ", final)
             quantity_sold = re.findall(r'\b\d+\b', final)
             if "trending" in final:
                 trending = "Yes/"
@@ -408,11 +433,15 @@ class EbayProductSpider(scrapy.Spider):
             'watchers': watchers,
         }
         self.db.insert_scraped_data(data)
-
-        print("GG: ", data)
+        # yield data
 
 
 class EbayPageSpider(scrapy.Spider):
+    """
+        Goes through each and every links taken from navbar links.
+        Goes through x number of pages from the pagination section
+        Modify 'pages' to go through x number of pages
+    """
     name = "ebayPageSpider"
     allowed_domains = ["ebay.ca"]
 
@@ -421,13 +450,16 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.pages = 120
+
+    def closed(self, reason):
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
         self.db.create_urls_scrape_table()
         all_pages_from_nav = self.db.get_page_links()
         for page in enumerate(all_pages_from_nav):
-            print("KKKijiji: ", page[1][0])
             url = str(page[1][0])
             yield scrapy.Request(url=url, callback=self.parse)
     
@@ -437,8 +469,8 @@ class EbayPageSpider(scrapy.Spider):
         for url in products_url:
             self.db.insert_product_link(get_parsed_url(url), url)
 
-        # We are setting a limit here upto 50 pages per url in scrape urls
-        for i in range(50):
+        # We are setting a limit here upto x pages per url in scrape urls
+        for i in range(self.pages):
             next_page = response.css('a.pagination__next::attr(href)').get()
             if next_page:
                 yield response.follow(next_page, self.parse)

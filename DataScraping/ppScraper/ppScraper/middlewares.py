@@ -4,6 +4,8 @@
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 from scrapy import signals
+from .logger import setup_logger
+import logging
 
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
@@ -101,3 +103,33 @@ class PpscraperDownloaderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
+
+
+class ScraperAPIMiddleware(object):
+    def __init__(self):
+        self.api_keys = []
+        with open('./scraperapis.txt', 'r') as f:
+            for line in f:
+                try:
+                    self.api_keys.append(str(line).replace("\n", "").strip())
+                except ValueError:
+                    pass
+
+        self.elog = setup_logger("middlewareError", 'middleware.log', level=logging.DEBUG)
+        self.api_url = "http://scraperapi:idk@proxy-server.scraperapi.com:8001"
+        
+
+    def process_request(self, request, spider):
+        proxy = self.api_url
+        request.meta['proxy'] = proxy
+
+    def process_response(self, request, response, spider):
+        if response.status != 200:
+            if self.api_keys:
+                api_key = self.api_keys[0]
+                self.elog.info(f"Scraper API KEY CHANGED FROM: {api_key}")
+                self.api_url = f"http://scraperapi:{str(api_key)}@proxy-server.scraperapi.com:8001"
+                self.api_keys.remove(api_key)
+                request.meta['proxy'] = self.api_url
+                self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
+        return response
