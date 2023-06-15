@@ -215,21 +215,22 @@ class EbayProductSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        self.db.create_scraped_urls_table()
-        prods = self.db.get_urls_to_scrape()
-        scraped_raw = self.db.get_scraped_links()
-        scraped = set(x[0] for x in scraped_raw)
+        # self.db.create_scraped_urls_table()
+        # prods = self.db.get_urls_to_scrape()
+        # scraped_raw = self.db.get_scraped_links()
+        # scraped = set(x[0] for x in scraped_raw)
 
-        for cnt, page in enumerate(prods):
-            # if cnt > 4500:
-            #     break
-            url = str(page[0])
-            self.countlog.info(f"Url: {url}")
-            self.countlog.info(f"Cnt: {cnt}")
-            if url in scraped:
-                self.elog.info(f"Url already scraped: {url}")
-                continue
-            yield scrapy.Request(url=url, callback=self.parse)
+        # for cnt, page in enumerate(prods):
+        #     # if cnt > 4500:
+        #     #     break
+        #     url = str(page[0])
+        #     self.countlog.info(f"Url: {url}")
+        #     self.countlog.info(f"Cnt: {cnt}")
+        #     if url in scraped:
+        #         self.elog.info(f"Url already scraped: {url}")
+        #         continue
+        #     yield scrapy.Request(url=url, callback=self.parse)
+        yield scrapy.Request(url="https://www.ebay.ca/itm/112012636413", callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -271,14 +272,15 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
         try:
-            shipping_price_bold = response.css(".ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
-            shipping_price_secondary = response.css(".ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
-            if shipping_price_secondary and "C" in shipping_price_secondary:
+            shipping_price_bold = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
+            
+            shipping_price_secondary = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
+            if shipping_price_secondary and "$" in shipping_price_secondary:
                 shipping = shipping_price_secondary
             elif shipping_price_bold:
                 shipping = shipping_price_bold
             else:
-                shipping = ""
+                shipping = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans::text").get()
 
             pattern = r"[(approx)]"
             shipping = re.sub(pattern, "", shipping)
@@ -433,6 +435,7 @@ class EbayProductSpider(scrapy.Spider):
             'watchers': watchers,
         }
         self.db.insert_scraped_data(data)
+        print(data)
         # yield data
 
 
