@@ -1,5 +1,6 @@
 import scrapy
-import csv
+import json
+import re
 from collections import OrderedDict
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
@@ -11,6 +12,8 @@ from selenium.webdriver.firefox.options import Options
 import mysql.connector
 from ..logger import setup_logger
 import logging
+from urllib.parse import urlparse
+from .helper import get_parsed_url
 
 class DBMgmt:
     def __init__(self, host, user, password, database):
@@ -23,39 +26,40 @@ class DBMgmt:
         self.cursor = self.conn.cursor()
 
     def create_page_links_table(self):
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS page_links (id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255), url_txt TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS page_links (id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255) NULL, url_txt TEXT NULL)")
         print("PageLinks table created....")
 
     def create_scraped_urls_table(self):
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS scraped_links (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                url VARCHAR(255) UNIQUE NULL,
+                url VARCHAR(255) UNIQUE,
                 url_full TEXT NULL,
                 name VARCHAR(500) NULL,
                 price VARCHAR(32) NULL,
-                condition TEXT NULL,
+                item_condition VARCHAR(255) NULL,
                 shipping VARCHAR(255) NULL,
+                located_in VARCHAR(255) NULL,
                 last_price VARCHAR(32) NULL,
                 us_price VARCHAR(32) NULL,
-                returns VARCHAR(255) NULL,
-                about TEXT NULL,
-                description TEXT NULL,
+                return_policy VARCHAR(255) NULL,
+                description_url TEXT NULL,
                 category VARCHAR(255) NULL,
                 authenticity VARCHAR(128) NULL,
                 money_back VARCHAR(128) NULL,
                 seller_positive_feedback VARCHAR(128) NULL,
                 seller_feedback_comments TEXT NULL,
-                seller_ratings TEXT NULL,
+                seller_item_sold VARCHAR(32) NULL,
+                seller_all_feedback_url TEXT NULL,
                 trending VARCHAR(24) NULL,
                 stock VARCHAR(255) NULL,
-                watchers VARCHAR(24) NULL,
-                seller_name VARCHAR(255) NULL,
-                seller_item_sold INTEGER NULL,
-                misc TEXT NULL
+                watchers VARCHAR(24) NULL
             )
         """)
-        print("ScrapedUrls table created....")
+    
+    def create_urls_scrape_table(self):
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS scrape_links(id INT AUTO_INCREMENT PRIMARY KEY, url VARCHAR(255) UNIQUE, name VARCHAR(255) NULL, url_txt TEXT NULL)")
+
     
     def is_url_scraped(self, url):
         self.cursor.execute("SELECT url FROM scraped_urls WHERE url = %s", (url,))
@@ -66,17 +70,54 @@ class DBMgmt:
     def insert_page_link(self, url, name):
         self.cursor.execute("INSERT IGNORE INTO page_links (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
         self.conn.commit()
-        print(f"Inserted into page_link: {url}, {name}")
-
-    def insert_scraped_url(self, url, name):
-        self.cursor.execute("INSERT IGNORE INTO scraped_urls (url, name, url_txt) VALUES (%s, %s, %s)", (url, name, url))
-        self.conn.commit()
     
+    def insert_product_link(self, url, url_full):
+        self.cursor.execute("INSERT IGNORE INTO scrape_links (url, url_txt) VALUES (%s, %s)", (url, url_full,))
+        self.conn.commit()
+        print(f"inserted into db {url}")
+    
+    def insert_scraped_data(self, data):
+        try:
+            self.cursor.execute("""
+                INSERT IGNORE INTO scraped_links (
+                    url, url_full, name, price, item_condition, shipping, located_in, last_price, us_price, 
+                    return_policy, description_url, category, authenticity, money_back, seller_positive_feedback, 
+                    seller_feedback_comments, seller_item_sold, seller_all_feedback_url, trending, stock, watchers
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (data['url'], data['url_full'], data['name'], data['price'], data['item_condition'], data['shipping'],
+                data['located_in'], data['last_price'], data['us_price'], data['return_policy'], data['description_url'],
+                data['category'], data['authenticity'], data['money_back'], data['seller_positive_feedback'],
+                data['seller_feedback_comments'], data['seller_item_sold'], data['seller_all_feedback_url'],
+                data['trending'], data['stock'], data['watchers']))
+            self.conn.commit()
+
+        except Exception as e:
+            print(f"Error occurred: {e}")
+            self.conn.rollback()
+    
+    def get_urls_to_scrape(self):
+        self.cursor.execute("""SELECT url FROM scrape_links""")
+        return self.cursor.fetchall()
+    
+    def get_scraped_links(self):
+        self.cursor.execute("""SELECT url FROM scraped_links""")
+        return self.cursor.fetchall()
+
+    def get_page_links(self):
+        self.cursor.execute("""SELECT url FROM page_links""")
+        return self.cursor.fetchall()
+
     def close_connection(self):
         self.conn.close()
+        self.cursor.close()
 
 
 class EbayNavSpider(scrapy.Spider):
+    """
+        Goes through nav links in navbar.
+        Done manually for each link in navbar
+    """
     name = "ebayNavSpider"
     allowed_domains = ["ebay.ca"]
     options = Options()
@@ -88,11 +129,12 @@ class EbayNavSpider(scrapy.Spider):
         
     def closed(self, reason):
         self.driver.quit()
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        # self.db.create_page_links_table()
-        # self.db.create_scraped_urls_table()
+        self.db.create_page_links_table()
+        self.db.create_scraped_urls_table()
         bay_url = "https://www.ebay.ca/"
         yield scrapy.Request(url=bay_url, callback=self.parse)
     
@@ -155,6 +197,9 @@ class EbayNavSpider(scrapy.Spider):
 
 
 class EbayProductSpider(scrapy.Spider):
+    """
+        Goes through every product link and extract attributes from each page
+    """
     name = "ebayProductSpider"
     allowed_domains = ["ebay.ca"]
 
@@ -163,16 +208,35 @@ class EbayProductSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.countlog = setup_logger(self.name, 'CountProducts.log', level=logging.DEBUG)
+    
+    def closed(self, reason):
+        self.db.close_connection()
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        #TODO: Get all the urls_to_scrape and urls_scraped from the database 
-        # and check if they have been scraped before and pass to the spider here
-        url = "https://www.ebay.ca/itm/325509566046"
-        yield scrapy.Request(url=url, callback=self.parse)
+        # self.db.create_scraped_urls_table()
+        # prods = self.db.get_urls_to_scrape()
+        # scraped_raw = self.db.get_scraped_links()
+        # scraped = set(x[0] for x in scraped_raw)
+
+        # for cnt, page in enumerate(prods):
+        #     # if cnt > 4500:
+        #     #     break
+        #     url = str(page[0])
+        #     self.countlog.info(f"Url: {url}")
+        #     self.countlog.info(f"Cnt: {cnt}")
+        #     if url in scraped:
+        #         self.elog.info(f"Url already scraped: {url}")
+        #         continue
+        #     yield scrapy.Request(url=url, callback=self.parse)
+        yield scrapy.Request(url="https://www.ebay.ca/itm/112012636413", callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
+        url = get_parsed_url(response.request.url)
+        url_full = response.request.url
+
         try:
             name = response.css("h1.x-item-title__mainTitle span::text").get()
         except Exception as e:
@@ -180,7 +244,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}")
 
         try:
-            condition = response.css("span.ux-icon-text__text span.ux-textspans::text").get()
+            condition = response.css("div.x-item-condition-value span.ux-textspans::text").get()
         except Exception as e:
             condition = ""
             self.elog.error(f"Error occurred while extracting element: {e}")
@@ -189,8 +253,9 @@ class EbayProductSpider(scrapy.Spider):
             prices = list()
             prices.append(response.css(".x-price-primary span.ux-textspans::text").get())
             prices.append(response.css(".x-price-approx__price > span:nth-child(1)::text").get())
-            print("KK: ", prices)
             for p in prices:
+                if p is None:
+                    continue
                 if "U" in p:
                     us_price = p
                 else:
@@ -198,4 +263,222 @@ class EbayProductSpider(scrapy.Spider):
         except Exception as e:
             self.elog.error(f"Error occurred while extracting element: {e}") 
         
-        print("GG: ", name, condition, price, us_price)
+        try:
+            last_price = response.css(".x-additional-info__textual-display span.ux-textspans--STRIKETHROUGH::text").get()
+            if not last_price:
+                last_price = ""
+        except Exception as e:
+            last_price = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            shipping_price_bold = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
+            
+            shipping_price_secondary = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
+            if shipping_price_secondary and "$" in shipping_price_secondary:
+                shipping = shipping_price_secondary
+            elif shipping_price_bold:
+                shipping = shipping_price_bold
+            else:
+                shipping = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans::text").get()
+
+            pattern = r"[(approx)]"
+            shipping = re.sub(pattern, "", shipping)
+        except Exception as e:
+            shipping = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+
+        try:
+            pre_text = response.css(".d-shipping-minview span.ux-textspans--SECONDARY::text").getall()
+            located_in = [x for x in pre_text if "Located in" in x]
+            if located_in:
+                located_in = located_in[0].replace("Located in:", "").strip()
+            else:
+                located_in = ""
+        except Exception as e:
+            located_in = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+
+        try:
+            text = response.css(".ux-layout-section--returns span.ux-textspans::text").getall()
+            returns = ' '.join(text).replace("See details", "").replace("Returns:", "").strip()
+        except Exception as e:
+            returns = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            description_url = response.css("iframe#desc_ifr::attr(src)").get()
+        except Exception as e:
+            description_url = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            texts = response.css('nav.breadcrumbs ul li a.seo-breadcrumb-text span::text').getall()
+            cleaned_texts = [text.strip() for text in texts]
+            category = '/'.join(cleaned_texts)
+        except Exception as e:
+            category = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            authenticity = ""
+            texts = response.css(".ux-section-icon-with-details__data-title span.ux-textspans::text").getall()
+            for text in texts:
+                if "Authenticity Guarantee" in text:
+                    authenticity = "Yes"
+                    break
+        except Exception as e:
+            authenticity = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            money_back = "No"
+            texts = response.css(".ux-section-icon-with-details__data-title span.ux-textspans::text").getall()
+            for text in texts:
+                if "Money Back Guarantee" in text:
+                    money_back = "Yes"
+                    break
+        except Exception as e:
+            money_back = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            texts = response.css(".ux-seller-section__content span.ux-textspans::text").getall()
+            seller_positive_rating = [x for x in texts if "feedback" in x]
+            if seller_positive_rating:
+                seller_positive_rating = seller_positive_rating[0].strip()
+            else:
+                seller_positive_rating = ""
+        except Exception as e:
+            seller_positive_rating = ""
+            self.elog.error(f"Error occurred while extracting element: {e}")
+        
+        try:
+            seller_all_feedback_url = response.css(".fdbk-detail-list__btn-container__btn::attr(href)").get()
+        except Exception as e:
+            seller_all_feedback_url = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            seller_feedback_comments = json.dumps(response.css(".d-stores-info-categories__details-container__tabbed-list div.fdbk-container__details__comment span::text").getall())
+            # json.loads(list_name)
+        except Exception as e:
+            seller_feedback_comments = json.dumps([])
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            trending = "No"
+            texts = response.css(".x-wtb-signals span.ux-textspans::text").getall()
+            cleaned_texts = [text.strip() for text in texts]
+            final = ''.join(cleaned_texts)
+            quantity_sold = re.findall(r'\b\d+\b', final)
+            if "trending" in final:
+                trending = "Yes/"
+                if quantity_sold:
+                    trending = trending + str(quantity_sold[0])
+        except Exception as e:
+            trending = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            texts = response.css(".d-quantity__availability span.ux-textspans::text").getall()
+            if texts:
+                stock = "".join([text.strip() for text in texts])
+            else:
+                stock = ""
+        except Exception as e:
+            stock = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        try:
+            watchers = ""
+            texts = response.css("#why2buy span.w2b-sgl::text").getall()
+            if texts:
+                for text in texts:
+                    if "watcher" in text:
+                        watchers = re.findall(r'\b\d+\b', text)
+                        if watchers:
+                            watchers = watchers[0]
+                        break
+        except Exception as e:
+            watchers = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+        
+        try:
+            seller_item_sold = response.css(".d-stores-info-categories__container__info__section__item:nth-child(3) span:nth-child(1)::text").get().strip()
+        except Exception as e:
+            seller_item_sold = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
+        
+        data = {
+            'url': url,
+            'url_full': url_full,
+            'name': name,
+            'price': price,
+            'item_condition': condition,
+            'shipping': shipping,
+            'located_in': located_in,
+            'last_price': last_price,
+            'us_price': us_price,
+            'return_policy': returns,
+            'description_url': description_url,
+            'category': category,
+            'authenticity': authenticity,
+            'money_back': money_back,
+            'seller_positive_feedback': seller_positive_rating,
+            'seller_feedback_comments': seller_feedback_comments,
+            'seller_item_sold': seller_item_sold,
+            'seller_all_feedback_url': seller_all_feedback_url,
+            'trending': trending,
+            'stock': stock,
+            'watchers': watchers,
+        }
+        self.db.insert_scraped_data(data)
+        print(data)
+        # yield data
+
+
+class EbayPageSpider(scrapy.Spider):
+    """
+        Goes through each and every links taken from navbar links.
+        Goes through x number of pages from the pagination section
+        Modify 'pages' to go through x number of pages
+    """
+    name = "ebayPageSpider"
+    allowed_domains = ["ebay.ca"]
+
+    start_urls = ["https://ebay.ca"]
+    
+    def __init__(self):
+        # Scrapy has it's own logger, we are using our custom logger here, elog
+        self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
+        self.pages = 120
+
+    def closed(self, reason):
+        self.db.close_connection()
+
+    def start_requests(self):
+        self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
+        self.db.create_urls_scrape_table()
+        all_pages_from_nav = self.db.get_page_links()
+        for page in enumerate(all_pages_from_nav):
+            url = str(page[1][0])
+            yield scrapy.Request(url=url, callback=self.parse)
+    
+    def parse(self, response):
+        raw_products = response.css(".b-list__items_nofooter a.s-item__link::attr(href)").getall()
+        products_url = [x for x in raw_products]
+        for url in products_url:
+            self.db.insert_product_link(get_parsed_url(url), url)
+
+        # We are setting a limit here upto x pages per url in scrape urls
+        for i in range(self.pages):
+            next_page = response.css('a.pagination__next::attr(href)').get()
+            if next_page:
+                yield response.follow(next_page, self.parse)
+            else:
+                break
+
+
+     

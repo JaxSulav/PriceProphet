@@ -129,19 +129,10 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 #     # ...
 # }
 
-
-# SCRAPEOPS_API_KEY = 'f71adecd-9e75-4693-9f2a-fa5bd5c7989a'
-# SCRAPEOPS_PROXY_ENABLED = True
-
-# DOWNLOADER_MIDDLEWARES = {
-#     'scrapeops_scrapy_proxy_sdk.scrapeops_scrapy_proxy_sdk.ScrapeOpsScrapyProxySdk': 725,
-# }
-
-# SCRAPERAPI_KEY = '68589a8ba79a7830d59950606c2cfdf6'
-# RETRY_HTTP_CODES = [429]
-# CONCURRENT_REQUESTS = 5
-# DOWNLOAD_DELAY = 0.5
-
+# SCRAPERAPI_KEY = ''
+RETRY_HTTP_CODES = [429, 499]
+CONCURRENT_REQUESTS = 5
+DOWNLOAD_DELAY = 0.5
 
 # DOWNLOADER_MIDDLEWARES = {
 #     'scrapy_scraperapi_middleware.ScrapyScraperAPIMiddleware': 350,
@@ -149,3 +140,8 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 #     'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
 # }
 
+DOWNLOADER_MIDDLEWARES = {
+    'ppScraper.middlewares.ScraperAPIMiddleware': 350,
+    'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': 400,
+    'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
+}
