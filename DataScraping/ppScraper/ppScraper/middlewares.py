@@ -6,6 +6,7 @@
 from scrapy import signals
 from .logger import setup_logger
 import logging
+import random
 
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
@@ -108,6 +109,7 @@ class PpscraperDownloaderMiddleware:
 class ScraperAPIMiddleware(object):
     def __init__(self):
         self.api_keys = []
+        self.tested_apis = []
         with open('./scraperapis.txt', 'r') as f:
             for line in f:
                 try:
@@ -124,12 +126,26 @@ class ScraperAPIMiddleware(object):
         request.meta['proxy'] = proxy
 
     def process_response(self, request, response, spider):
+        print("LLL: ", response.status)
+        # We take a random key
+        # attach to url
+        # re-request 5 times if failed
+        # leave as it is if not failed
+        if len(self.tested_apis) == len(self.api_keys):
+            self.tested_apis = []
         if response.status != 200:
-            if self.api_keys:
-                api_key = self.api_keys[0]
-                self.elog.info(f"Scraper API KEY CHANGED FROM: {api_key}")
-                self.api_url = f"http://scraperapi:{str(api_key)}@proxy-server.scraperapi.com:8001"
-                self.api_keys.remove(api_key)
-                request.meta['proxy'] = self.api_url
-                self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
+            num_retries = request.meta.get('retry_x', 0) + 1
+            if num_retries <= 5:
+                if self.api_keys:
+                    request_clone = request.copy()
+                    index = random.choice([i for i in range(len(self.api_keys)) if i not in self.tested_apis])
+                    api_key = self.api_keys[index]
+                    self.api_url = f"http://scraperapi:{str(api_key)}@proxy-server.scraperapi.com:8001"
+                    self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
+                    self.tested_apis.append(index)
+                    request.meta['proxy'] = self.api_url
+                    request_clone.meta['retry_x'] = num_retries
+                    request_clone.dont_filter = True  
+                    return request_clone
+                
         return response
