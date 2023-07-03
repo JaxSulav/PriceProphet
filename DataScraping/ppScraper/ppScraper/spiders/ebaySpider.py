@@ -176,7 +176,14 @@ class EbayNavSpider(scrapy.Spider):
             self.db.insert_page_link(link, "Men's Shoes Category")
             if cnt < 5:
                 yield response.follow(link, self.men_shoes_by_categories)
-                
+    
+    def men_accessories(self, response):
+        self.db.insert_page_link(response.request.url, "Men's Accessories")
+        links = response.css('#s0-27-9-0-1[0]-0-1[0]-0-12-list li a::attr(href)').getall()
+        for link in links:
+            self.db.insert_page_link(link, "Men's Accessories")
+            
+
     # def process_nav_items_fashion(self, links):
         # yield scrapy.Request(links[0].get_attribute("href"), self.womens_clothing)
         # yield scrapy.Request(links[1].get_attribute("href"), self.women_shoes)
@@ -272,19 +279,19 @@ class EbayProductSpider(scrapy.Spider):
             last_price = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
-        try:
-            shipping_price_bold = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
+        try:           
+            shipping_price_secondary = None
+            info_div = response.css('div#SRPSection')
+            shipping_bold_secondary = info_div.css('div.ux-labels-values-with-hints--SECONDARY-SMALL span.ux-textspans--BOLD::text').getall()
+            for item in shipping_bold_secondary:
+                if "approx" in item:
+                    shipping_price_secondary = item
+                    break
             
-            shipping_price_secondary = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
-            if shipping_price_secondary and "$" in shipping_price_secondary:
+            if shipping_price_secondary:
                 shipping = shipping_price_secondary
-            elif shipping_price_bold:
-                shipping = shipping_price_bold
             else:
-                shipping = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans::text").get()
-
-            pattern = r"[(approx)]"
-            shipping = re.sub(pattern, "", shipping)
+                shipping = "Free"
         except Exception as e:
             shipping = ""
             self.elog.error(f"Error occurred while extracting element: {e}")
@@ -443,7 +450,7 @@ class EbayProductSpider(scrapy.Spider):
             'brand': brand
         }
         self.db.insert_scraped_data(data)
-        print("DATA:", data)
+        # print("DATA:", data)
         # yield data
 
 
@@ -461,7 +468,7 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
-        self.pages = 120
+        self.pages = 300
 
     def closed(self, reason):
         self.db.close_connection()

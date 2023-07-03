@@ -126,7 +126,6 @@ class ScraperAPIMiddleware(object):
         request.meta['proxy'] = proxy
 
     def process_response(self, request, response, spider):
-        print("LLL: ", response.status)
         # We take a random key
         # attach to url
         # re-request 5 times if failed
