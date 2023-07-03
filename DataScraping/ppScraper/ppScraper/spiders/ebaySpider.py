@@ -53,6 +53,7 @@ class DBMgmt:
                 seller_all_feedback_url TEXT NULL,
                 trending VARCHAR(24) NULL,
                 stock VARCHAR(255) NULL,
+                brand VARCHAR(255) NULL,
                 watchers VARCHAR(24) NULL
             )
         """)
@@ -175,14 +176,21 @@ class EbayNavSpider(scrapy.Spider):
             self.db.insert_page_link(link, "Men's Shoes Category")
             if cnt < 5:
                 yield response.follow(link, self.men_shoes_by_categories)
-                
+    
+    def men_accessories(self, response):
+        self.db.insert_page_link(response.request.url, "Men's Accessories")
+        links = response.css('#s0-27-9-0-1[0]-0-1[0]-0-12-list li a::attr(href)').getall()
+        for link in links:
+            self.db.insert_page_link(link, "Men's Accessories")
+            
+
     # def process_nav_items_fashion(self, links):
         # yield scrapy.Request(links[0].get_attribute("href"), self.womens_clothing)
         # yield scrapy.Request(links[1].get_attribute("href"), self.women_shoes)
 
     def parse(self, response):
         self.driver.get(response.url)
-        fashion_element = self.driver.find_element(By.CSS_SELECTOR, '#mainContent > div.hl-cat-nav > ul > li:nth-child(3)')
+        fashion_element = self.driver.find_element(By.CSS_SELECTOR, '#mainContent > div.hl-cat-nav > ul > li:nth-child(8)')
         hover = ActionChains(self.driver).move_to_element(fashion_element)
         hover.perform()
 
@@ -215,22 +223,22 @@ class EbayProductSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        # self.db.create_scraped_urls_table()
-        # prods = self.db.get_urls_to_scrape()
-        # scraped_raw = self.db.get_scraped_links()
-        # scraped = set(x[0] for x in scraped_raw)
+        self.db.create_scraped_urls_table()
+        prods = self.db.get_urls_to_scrape()
+        scraped_raw = self.db.get_scraped_links()
+        scraped = set(x[0] for x in scraped_raw)
 
-        # for cnt, page in enumerate(prods):
-        #     # if cnt > 4500:
-        #     #     break
-        #     url = str(page[0])
-        #     self.countlog.info(f"Url: {url}")
-        #     self.countlog.info(f"Cnt: {cnt}")
-        #     if url in scraped:
-        #         self.elog.info(f"Url already scraped: {url}")
-        #         continue
-        #     yield scrapy.Request(url=url, callback=self.parse)
-        yield scrapy.Request(url="https://www.ebay.ca/itm/112012636413", callback=self.parse)
+        for cnt, page in enumerate(prods):
+            # if cnt > 4500:
+            #     break
+            url = str(page[0])
+            self.countlog.info(f"Url: {url}")
+            self.countlog.info(f"Cnt: {cnt}")
+            if url in scraped:
+                self.elog.info(f"Url already scraped: {url}")
+                continue
+            yield scrapy.Request(url=url, callback=self.parse)
+        # yield scrapy.Request(url="https://www.ebay.ca/itm/112012636413", callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -271,19 +279,19 @@ class EbayProductSpider(scrapy.Spider):
             last_price = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
-        try:
-            shipping_price_bold = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--BOLD::text").get()
+        try:           
+            shipping_price_secondary = None
+            info_div = response.css('div#SRPSection')
+            shipping_bold_secondary = info_div.css('div.ux-labels-values-with-hints--SECONDARY-SMALL span.ux-textspans--BOLD::text').getall()
+            for item in shipping_bold_secondary:
+                if "approx" in item:
+                    shipping_price_secondary = item
+                    break
             
-            shipping_price_secondary = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans--SECONDARY::text").get()
-            if shipping_price_secondary and "$" in shipping_price_secondary:
+            if shipping_price_secondary:
                 shipping = shipping_price_secondary
-            elif shipping_price_bold:
-                shipping = shipping_price_bold
             else:
-                shipping = response.css("#SRPSection div.ux-labels-values--shipping span.ux-textspans::text").get()
-
-            pattern = r"[(approx)]"
-            shipping = re.sub(pattern, "", shipping)
+                shipping = "Free"
         except Exception as e:
             shipping = ""
             self.elog.error(f"Error occurred while extracting element: {e}")
@@ -410,6 +418,12 @@ class EbayProductSpider(scrapy.Spider):
             seller_item_sold = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
+        try:
+            brand = response.xpath('//div[@class="ux-layout-section-evo__row"]//span[contains(text(), "Brand")]/following::span[@class="ux-textspans"][1]/text()').get()
+        except Exception as e:
+            brand = ""
+            self.elog.error(f"Error occurred while extracting element: {e}") 
+
         
         data = {
             'url': url,
@@ -433,9 +447,10 @@ class EbayProductSpider(scrapy.Spider):
             'trending': trending,
             'stock': stock,
             'watchers': watchers,
+            'brand': brand
         }
         self.db.insert_scraped_data(data)
-        print(data)
+        # print("DATA:", data)
         # yield data
 
 
@@ -453,7 +468,7 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
-        self.pages = 120
+        self.pages = 300
 
     def closed(self, reason):
         self.db.close_connection()
