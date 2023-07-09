@@ -118,7 +118,7 @@ class ScraperAPIMiddleware(object):
                     pass
 
         self.elog = setup_logger("middlewareError", 'middleware.log', level=logging.DEBUG)
-        self.api_url = "http://scraperapi:idk@proxy-server.scraperapi.com:8001"
+        self.api_url = "http://scraperapi:zero@proxy-server.scraperapi.com:8001"
         
 
     def process_request(self, request, spider):
@@ -126,25 +126,14 @@ class ScraperAPIMiddleware(object):
         request.meta['proxy'] = proxy
 
     def process_response(self, request, response, spider):
-        # We take a random key
-        # attach to url
-        # re-request 5 times if failed
-        # leave as it is if not failed
         if len(self.tested_apis) == len(self.api_keys):
             self.tested_apis = []
-        if response.status != 200:
-            num_retries = request.meta.get('retry_x', 0) + 1
-            if num_retries <= 5:
-                if self.api_keys:
-                    request_clone = request.copy()
-                    index = random.choice([i for i in range(len(self.api_keys)) if i not in self.tested_apis])
-                    api_key = self.api_keys[index]
-                    self.api_url = f"http://scraperapi:{str(api_key)}@proxy-server.scraperapi.com:8001"
-                    self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
-                    self.tested_apis.append(index)
-                    request.meta['proxy'] = self.api_url
-                    request_clone.meta['retry_x'] = num_retries
-                    request_clone.dont_filter = True  
-                    return request_clone
-                
+        print("Resp Stat: ", response.status)
+        if response.status == 403 or response.status == 401:
+            if self.api_keys:
+                index = random.choice([i for i in range(len(self.api_keys)) if i not in self.tested_apis])
+                api_key = self.api_keys[index]
+                self.api_url = f"http://scraperapi:{api_key}@proxy-server.scraperapi.com:8001"
+                self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
+                self.tested_apis.append(index)
         return response
