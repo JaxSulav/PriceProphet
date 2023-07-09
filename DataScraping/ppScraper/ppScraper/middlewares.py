@@ -6,6 +6,7 @@
 from scrapy import signals
 from .logger import setup_logger
 import logging
+import random
 
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
@@ -108,6 +109,7 @@ class PpscraperDownloaderMiddleware:
 class ScraperAPIMiddleware(object):
     def __init__(self):
         self.api_keys = []
+        self.tested_apis = []
         with open('./scraperapis.txt', 'r') as f:
             for line in f:
                 try:
@@ -116,7 +118,7 @@ class ScraperAPIMiddleware(object):
                     pass
 
         self.elog = setup_logger("middlewareError", 'middleware.log', level=logging.DEBUG)
-        self.api_url = "http://scraperapi:idk@proxy-server.scraperapi.com:8001"
+        self.api_url = "http://scraperapi:zero@proxy-server.scraperapi.com:8001"
         
 
     def process_request(self, request, spider):
@@ -124,12 +126,14 @@ class ScraperAPIMiddleware(object):
         request.meta['proxy'] = proxy
 
     def process_response(self, request, response, spider):
-        if response.status != 200:
+        if len(self.tested_apis) == len(self.api_keys):
+            self.tested_apis = []
+        print("Resp Stat: ", response.status)
+        if response.status == 403 or response.status == 401:
             if self.api_keys:
-                api_key = self.api_keys[0]
-                self.elog.info(f"Scraper API KEY CHANGED FROM: {api_key}")
-                self.api_url = f"http://scraperapi:{str(api_key)}@proxy-server.scraperapi.com:8001"
-                self.api_keys.remove(api_key)
-                request.meta['proxy'] = self.api_url
+                index = random.choice([i for i in range(len(self.api_keys)) if i not in self.tested_apis])
+                api_key = self.api_keys[index]
+                self.api_url = f"http://scraperapi:{api_key}@proxy-server.scraperapi.com:8001"
                 self.elog.info(f"Scraper API KEY CHANGED TO: {api_key}")
+                self.tested_apis.append(index)
         return response
