@@ -83,14 +83,14 @@ class DBMgmt:
                 INSERT IGNORE INTO scraped_links (
                     url, url_full, name, price, item_condition, shipping, located_in, last_price, us_price, 
                     return_policy, description_url, category, authenticity, money_back, seller_positive_feedback, 
-                    seller_feedback_comments, seller_item_sold, seller_all_feedback_url, trending, stock, watchers
+                    seller_feedback_comments, seller_item_sold, seller_all_feedback_url, trending, stock, brand, watchers
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (data['url'], data['url_full'], data['name'], data['price'], data['item_condition'], data['shipping'],
                 data['located_in'], data['last_price'], data['us_price'], data['return_policy'], data['description_url'],
                 data['category'], data['authenticity'], data['money_back'], data['seller_positive_feedback'],
                 data['seller_feedback_comments'], data['seller_item_sold'], data['seller_all_feedback_url'],
-                data['trending'], data['stock'], data['watchers']))
+                data['trending'], data['stock'], data['brand'], data['watchers']))
             self.conn.commit()
 
         except Exception as e:
@@ -223,7 +223,7 @@ class EbayProductSpider(scrapy.Spider):
 
     def start_requests(self):
         self.db = DBMgmt("localhost", "root", "password", "PriceProphet")
-        self.db.create_scraped_urls_table()
+        # self.db.create_scraped_urls_table()
         prods = self.db.get_urls_to_scrape()
         scraped_raw = self.db.get_scraped_links()
         scraped = set(x[0] for x in scraped_raw)
@@ -238,7 +238,8 @@ class EbayProductSpider(scrapy.Spider):
                 self.elog.info(f"Url already scraped: {url}")
                 continue
             yield scrapy.Request(url=url, callback=self.parse)
-        # yield scrapy.Request(url="https://www.ebay.ca/itm/112012636413", callback=self.parse)
+        # yield scrapy.Request(url="https://www.ebay.ca/itm/364309946358", callback=self.parse)
+        # yield scrapy.Request(url="https://www.ebay.ca/itm/285228327185", callback=self.parse)
 
     def parse(self, response):
         us_price = price = ""
@@ -419,7 +420,7 @@ class EbayProductSpider(scrapy.Spider):
             self.elog.error(f"Error occurred while extracting element: {e}") 
 
         try:
-            brand = response.xpath('//div[@class="ux-layout-section-evo__row"]//span[contains(text(), "Brand")]/following::span[@class="ux-textspans"][1]/text()').get()
+            brand = response.xpath('//div[@class="ux-layout-section-evo__row"]//span[text()="Brand"]/following::span[@class="ux-textspans"][1]/text()').get()
         except Exception as e:
             brand = ""
             self.elog.error(f"Error occurred while extracting element: {e}") 
@@ -468,7 +469,7 @@ class EbayPageSpider(scrapy.Spider):
     def __init__(self):
         # Scrapy has it's own logger, we are using our custom logger here, elog
         self.elog = setup_logger(self.name, 'eBayProductspider.log', level=logging.DEBUG)
-        self.pages = 300
+        self.pages = 500
 
     def closed(self, reason):
         self.db.close_connection()
