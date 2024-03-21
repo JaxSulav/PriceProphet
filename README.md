@@ -17,5 +17,5 @@ https://public.tableau.com/app/profile/sulav.shrestha5163/viz/PriceProphetPublic
 # Initial Data distribution
 <img width="1481" alt="Screenshot 2024-03-21 at 19 02 38" src="https://github.com/JaxSulav/PriceProphet/assets/22235127/596eff34-9e65-4030-92e4-95b01f6f8e0f">
 
-# Model flow
+# Data flow
 <img width="1499" alt="Screenshot 2024-03-21 at 19 03 32" src="https://github.com/JaxSulav/PriceProphet/assets/22235127/0fb0cc3d-81d5-43fb-bb42-3b491670dbd8">
